@@ -9,8 +9,33 @@ export async function api<T = unknown>(path: string, method = 'GET', body?: unkn
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const data = await res.json();
-  if (!res.ok) throw Error(data.error || 'Não foi possível concluir.');
+  const raw = await res.text();
+  const contentType = res.headers.get('content-type') || '';
+  const endpoint = `/api${path}`;
+  const unavailable = `A API do SCAR não está disponível em ${endpoint} (HTTP ${res.status}). Verifique se o servidor da aplicação está publicado e se as rotas /api estão direcionadas para ele.`;
+  if (!/application\/(?:[\w.-]+\+)?json(?:;|$)/i.test(contentType)) {
+    throw new Error(unavailable);
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error(
+      `A API retornou JSON inválido em ${endpoint} (HTTP ${res.status}). Tente novamente ou verifique o servidor.`,
+    );
+  }
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error(
+      `A API retornou dados inesperados em ${endpoint}. Verifique a configuração do servidor.`,
+    );
+  }
+  if (!res.ok) {
+    const message =
+      'error' in data && typeof data.error === 'string'
+        ? data.error
+        : `Não foi possível concluir a operação (HTTP ${res.status}).`;
+    throw new Error(message);
+  }
   return data as T;
 }
 export const money = (cents: number) =>
