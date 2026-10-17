@@ -1,0 +1,16 @@
+services:
+  scar:
+    build: .
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - scar_data:/app/data
+      - scar_backups:/app/backups
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      SCAR_DB: /app/data/scar.db
+    restart: unless-stopped
+volumes:
+  scar_data:
+  scar_backups:
