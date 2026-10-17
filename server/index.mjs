@@ -4,6 +4,16 @@ import { resolve, extname, sep } from 'node:path';
 import { randomBytes, createHash } from 'node:crypto';
 import { openDb, passwordHash, verifyPassword, seedDemo, today } from './db.mjs';
 const demo = process.argv.includes('--demo');
+// Temporary direct access; set SCAR_REQUIRE_LOGIN=1 to restore authentication.
+const requireLogin = process.env.SCAR_REQUIRE_LOGIN === '1';
+const directSession = {
+  id: 0,
+  name: 'Gestor',
+  email: '',
+  role: 'admin',
+  csrf: randomBytes(24).toString('hex'),
+  token: '',
+};
 const db = openDb(demo ? 'data/demo.db' : undefined);
 if (demo) seedDemo(db);
 const port = Number(process.env.PORT || 3000),
@@ -187,6 +197,7 @@ function snapshot(user) {
     settings: db.prepare('SELECT * FROM settings WHERE id=1').get(),
     today: today(),
     demo,
+    requireLogin,
     plans: all('plans'),
     members: all('members'),
     classes: all('classes'),
@@ -198,7 +209,7 @@ function snapshot(user) {
     data.workouts = all('workouts').map((w) => ({ ...w, exercises: JSON.parse(w.exercises) }));
     data.assessments = all('assessments');
   }
-  if (user.role === 'admin')
+  if (requireLogin && user.role === 'admin')
     data.users = db.prepare('SELECT id,name,email,role,active FROM users ORDER BY id').all();
   return data;
 }
@@ -251,9 +262,11 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         ok: true,
         demo,
+        requireLogin,
         initialized: !!db.prepare('SELECT id FROM users LIMIT 1').get(),
       });
     if (path === '/api/login' && req.method === 'POST') {
+      if (!requireLogin) fail('O painel está com acesso direto.', 409);
       const key = req.socket.remoteAddress;
       const attempt = throttle.get(key);
       const now = Date.now();
@@ -294,13 +307,14 @@ const server = http.createServer(async (req, res) => {
       .map((s) => s.trim())
       .find((s) => s.startsWith('scar_session='))
       ?.slice(13);
-    const session =
-      token &&
-      db
-        .prepare(
-          'SELECT s.csrf,s.token,u.* FROM sessions s JOIN users u ON s.user_id=u.id WHERE s.token=? AND s.expires>? AND u.active=1',
-        )
-        .get(digest(token), Date.now());
+    const session = !requireLogin
+      ? directSession
+      : token &&
+        db
+          .prepare(
+            'SELECT s.csrf,s.token,u.* FROM sessions s JOIN users u ON s.user_id=u.id WHERE s.token=? AND s.expires>? AND u.active=1',
+          )
+          .get(digest(token), Date.now());
     if (!session) fail('Entre na sua conta para continuar.', 401);
     if (req.method !== 'GET' && req.headers['x-csrf-token'] !== session.csrf)
       fail('Sessão inválida. Atualize a página.', 403);
@@ -335,6 +349,8 @@ const server = http.createServer(async (req, res) => {
     const entity = parts[1],
       entityId = parts[2] ? Number(parts[2]) : undefined;
     const b = await body(req);
+    if (!requireLogin && ['password', 'users'].includes(entity))
+      fail('Gestão de acessos disponível quando o login for reativado.', 409);
     if (entity === 'password' && req.method === 'POST') {
       if (
         typeof b.currentPassword !== 'string' ||

@@ -18,6 +18,14 @@ Não contém código, marca, arquivos ou integrações proprietárias do Sistema
 - **Equipe:** perfis de administrador, recepção e professor, desativação de acessos e alteração da própria senha.
 - **Dados:** SQLite, backup consistente e exportação JSON dos registros operacionais.
 
+## Acesso direto temporário
+
+O sistema abre diretamente no painel, sem tela de login e sem criação obrigatória de usuário. O acesso tem permissões de administrador para os módulos da academia. Os controles de sair, alterar senha e gerenciar equipe ficam ocultos nesse modo.
+
+Enquanto esse modo estiver ativo, qualquer pessoa que consiga acessar o endereço do sistema pode consultar e alterar os dados da academia.
+
+Para reativar o login depois, execute `npm run setup` caso ainda não exista um administrador e inicie o servidor com `SCAR_REQUIRE_LOGIN=1`. As contas e senhas existentes são preservadas.
+
 ## Iniciar no computador
 
 Requer **Node.js 24.15 ou superior da linha 24** (testado com 24.19). O SQLite usado é o módulo integrado ao Node. Não requer instalar banco separado ou fornecer chaves de APIs.
@@ -27,11 +35,10 @@ git clone https://github.com/bininpython/scar.git
 cd scar
 npm ci
 npm run build
-npm run setup
 npm start
 ```
 
-O comando `setup` pede nome, e-mail e senha do primeiro administrador. A senha tem entrada oculta e deve conter no mínimo 12 caracteres. Não há senha padrão para dados reais.
+Quando o login for reativado, o comando `setup` pede nome, e-mail e senha do primeiro administrador. A senha tem entrada oculta e deve conter no mínimo 12 caracteres. Não há senha padrão para dados reais.
 
 Abra **http://127.0.0.1:3000**. Em seguida:
 
@@ -39,7 +46,7 @@ Abra **http://127.0.0.1:3000**. Em seguida:
 2. Cadastre os **Planos**.
 3. Cadastre seus **Alunos**, indicando plano e vencimento.
 4. Em **Financeiro**, escolha a competência e clique em **Gerar mensalidades**.
-5. Cadastre a equipe, aulas, treinos e avaliações conforme necessário.
+5. Cadastre aulas, treinos e avaliações conforme necessário. A gestão de equipe retorna ao reativar o login.
 
 ### Demonstração
 
@@ -50,6 +57,7 @@ npm run demo
 ```
 
 - Endereço: http://127.0.0.1:3000
+- A demonstração também abre direto no painel. As credenciais abaixo só são usadas com `SCAR_REQUIRE_LOGIN=1`.
 - E-mail: `demo@scar.local`
 - Senha: `Demo@Scar2026`
 - Dados inteiramente fictícios em `data/demo.db`, separados de `data/scar.db`.
@@ -58,7 +66,7 @@ npm run demo
 
 ### Desenvolvimento
 
-Em um terminal: `npm start` (após `npm run setup` e o primeiro build). Em outro: `npm run dev`. O Vite fornece o frontend em http://127.0.0.1:5173 e encaminha `/api` ao servidor da porta 3000.
+Em um terminal: `npm start` (após o primeiro build). Em outro: `npm run dev`. O Vite fornece o frontend em http://127.0.0.1:5173 e encaminha `/api` ao servidor da porta 3000.
 
 ```bash
 npm run build    # Verificação TypeScript + bundle de produção
@@ -67,6 +75,8 @@ npm run format   # Formatação do código
 ```
 
 ## Perfis de acesso
+
+A tabela abaixo se aplica quando `SCAR_REQUIRE_LOGIN=1`. No acesso direto temporário, o painel opera com permissões de administrador, exceto a gestão de contas.
 
 | Recurso                             | Administrador     | Recepção          | Professor |
 | ----------------------------------- | ----------------- | ----------------- | --------- |
@@ -116,7 +126,6 @@ O projeto está preparado para **um servidor Node com disco persistente**, ou Do
 
 ```bash
 docker compose build
-docker compose run --rm scar node server/setup.mjs
 docker compose up -d
 ```
 
@@ -124,16 +133,17 @@ Acesse http://127.0.0.1:3000. O volume `scar_data` mantém o banco. O container 
 
 ### Variáveis de ambiente
 
-| Variável              | Padrão         | Uso                                                |
-| --------------------- | -------------- | -------------------------------------------------- |
-| `HOST`                | `127.0.0.1`    | Interface de escuta; `0.0.0.0` para container/rede |
-| `PORT`                | `3000`         | Porta do servidor                                  |
-| `SCAR_DB`             | `data/scar.db` | Caminho do banco                                   |
-| `SCAR_ORIGIN`         | vazio          | Origem HTTPS pública autorizada para API/proxy     |
-| `SCAR_SECURE_COOKIE`  | vazio          | Use `1` atrás de HTTPS                             |
-| `SCAR_ADMIN_NAME`     | interativo     | Nome para o primeiro `setup`                       |
-| `SCAR_ADMIN_EMAIL`    | interativo     | E-mail para o primeiro `setup`                     |
-| `SCAR_ADMIN_PASSWORD` | interativo     | Senha para o primeiro `setup`                      |
+| Variável              | Padrão         | Uso                                                      |
+| --------------------- | -------------- | -------------------------------------------------------- |
+| `SCAR_REQUIRE_LOGIN`  | `0`            | `1` reativa o login; sem essa opção o painel abre direto |
+| `HOST`                | `127.0.0.1`    | Interface de escuta; `0.0.0.0` para container/rede       |
+| `PORT`                | `3000`         | Porta do servidor                                        |
+| `SCAR_DB`             | `data/scar.db` | Caminho do banco                                         |
+| `SCAR_ORIGIN`         | vazio          | Origem HTTPS pública autorizada para API/proxy           |
+| `SCAR_SECURE_COOKIE`  | vazio          | Use `1` atrás de HTTPS                                   |
+| `SCAR_ADMIN_NAME`     | interativo     | Nome para o primeiro `setup`                             |
+| `SCAR_ADMIN_EMAIL`    | interativo     | E-mail para o primeiro `setup`                           |
+| `SCAR_ADMIN_PASSWORD` | interativo     | Senha para o primeiro `setup`                            |
 
 O servidor lê variáveis do processo. Para um arquivo local, copie `.env.example` para `.env` e execute `node --env-file=.env server/index.mjs`. Nunca publique esse arquivo.
 
@@ -153,7 +163,7 @@ public/              Identidade visual local
 
 ## Segurança e escopo da primeira versão
 
-Sessões de 8 horas com cookies HttpOnly/SameSite; token CSRF e validação de origem para escrita; senhas scrypt com salt; SQL parametrizado; validação de entradas; perfis no servidor; trilha de auditoria no banco; saída CSV protegida contra fórmulas. A senha pode ser alterada pelo ícone de escudo no cabeçalho; sessões de outros dispositivos são revogadas.
+Quando o login está habilitado: sessões de 8 horas com cookies HttpOnly/SameSite; token CSRF e validação de origem para escrita; senhas scrypt com salt; SQL parametrizado; validação de entradas; perfis no servidor; trilha de auditoria no banco; saída CSV protegida contra fórmulas. A senha pode ser alterada pelo ícone de escudo no cabeçalho; sessões de outros dispositivos são revogadas.
 
 Aplicação para **uma academia em uma instância**. O estado é carregado integralmente por perfil: grandes bases precisarão de paginação e consultas específicas. Não inclui multiempresa, cobrança bancária, Pix automático, emissão fiscal, WhatsApp, reconhecimento facial, integração de catracas, acesso de alunos ou recuperação de senha por e-mail. O cadastro e a gestão dessas integrações devem ser um projeto separado.
 

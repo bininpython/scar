@@ -671,6 +671,7 @@ export default function App() {
     [classId, setClassId] = useState<number | null>(null),
     [assessmentMember, setAssessmentMember] = useState(''),
     [period, setPeriod] = useState('');
+  const [authRequired, setAuthRequired] = useState(false);
   const [settings, setSettings] = useState({ name: '', email: '', phone: '' });
   const notifyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   function accept(s: State) {
@@ -684,7 +685,11 @@ export default function App() {
   }
   useEffect(() => {
     let alive = true;
-    api<State>('/state')
+    api<{ requireLogin: boolean }>('/health')
+      .then((config) => {
+        if (alive) setAuthRequired(config.requireLogin);
+        return api<State>('/state');
+      })
       .then((s) => {
         if (alive) {
           setData(s);
@@ -693,7 +698,9 @@ export default function App() {
           setPeriod(s.today.slice(0, 7));
         }
       })
-      .catch(() => {})
+      .catch((e: Error) => {
+        if (alive) setError(e.message);
+      })
       .finally(() => {
         if (alive) setLoading(false);
       });
@@ -818,7 +825,19 @@ export default function App() {
         <span>Carregando sua academia…</span>
       </div>
     );
-  if (!data) return <Login onLogin={accept} />;
+  if (!data && authRequired) return <Login onLogin={accept} />;
+  if (!data)
+    return (
+      <div className="loading" role="alert">
+        <AlertCircle size={28} />
+        <div>
+          <p>{error || 'Não foi possível carregar o painel.'}</p>
+          <button className="btn primary" onClick={() => window.location.reload()}>
+            Tentar novamente
+          </button>
+        </div>
+      </div>
+    );
   const { user, members, plans, classes, checkins, bookings } = data;
   const invoices = data.invoices ?? [],
     workouts = data.workouts ?? [],
@@ -961,28 +980,38 @@ export default function App() {
             <span className="pulse" />
             SCAR 1.0 <span>{data.demo ? 'DEMO' : 'LOCAL'}</span>
           </div>
-          <button
-            className="user-button"
-            onClick={async () => {
-              try {
-                await api('/logout', 'POST', {});
-                setData(null);
-                setCsrf('');
-                setPage('dashboard');
-                setError('');
-              } catch (e) {
-                setError((e as Error).message);
-              }
-            }}
-            title="Sair da conta"
-          >
-            <span className="avatar">{initials(user.name)}</span>
-            <span>
-              <strong>{user.name.split(' • ')[0]}</strong>
-              <small>{roleNames[user.role]}</small>
-            </span>
-            <LogOut size={17} />
-          </button>
+          {data.requireLogin ? (
+            <button
+              className="user-button"
+              onClick={async () => {
+                try {
+                  await api('/logout', 'POST', {});
+                  setData(null);
+                  setCsrf('');
+                  setPage('dashboard');
+                  setError('');
+                } catch (e) {
+                  setError((e as Error).message);
+                }
+              }}
+              title="Sair da conta"
+            >
+              <span className="avatar">{initials(user.name)}</span>
+              <span>
+                <strong>{user.name.split(' • ')[0]}</strong>
+                <small>{roleNames[user.role]}</small>
+              </span>
+              <LogOut size={17} />
+            </button>
+          ) : (
+            <div className="user-button">
+              <span className="avatar">SC</span>
+              <span>
+                <strong>Painel da academia</strong>
+                <small>Acesso direto</small>
+              </span>
+            </div>
+          )}
         </div>
       </aside>
       {menu && (
@@ -1019,14 +1048,16 @@ export default function App() {
             >
               <RefreshCw size={17} />
             </button>
-            <button
-              className="icon-btn"
-              onClick={() => open('password')}
-              title="Alterar minha senha"
-              aria-label="Alterar minha senha"
-            >
-              <ShieldCheck size={18} />
-            </button>
+            {data.requireLogin && (
+              <button
+                className="icon-btn"
+                onClick={() => open('password')}
+                title="Alterar minha senha"
+                aria-label="Alterar minha senha"
+              >
+                <ShieldCheck size={18} />
+              </button>
+            )}
             <span className="avatar small">{initials(user.name)}</span>
           </div>
         </header>
@@ -2054,47 +2085,49 @@ export default function App() {
                   </button>
                 </form>
               </section>
-              <section className="panel">
-                <div className="panel-head">
-                  <div>
-                    <h2>Equipe e acessos</h2>
-                    <p>Administradores, recepcionistas e professores.</p>
+              {data.requireLogin && (
+                <section className="panel">
+                  <div className="panel-head">
+                    <div>
+                      <h2>Equipe e acessos</h2>
+                      <p>Administradores, recepcionistas e professores.</p>
+                    </div>
+                    <button className="btn secondary" onClick={() => open('users')}>
+                      <Plus size={16} />
+                      Novo acesso
+                    </button>
                   </div>
-                  <button className="btn secondary" onClick={() => open('users')}>
-                    <Plus size={16} />
-                    Novo acesso
-                  </button>
-                </div>
-                <Table headers={['Nome', 'E-mail', 'Perfil', 'Acesso', 'Ações']}>
-                  {data.users?.map((u) => (
-                    <tr key={u.id}>
-                      <td>
-                        <strong>{u.name}</strong>
-                      </td>
-                      <td>{u.email}</td>
-                      <td>{roleNames[u.role]}</td>
-                      <td>
-                        <Badge value={u.active ? 'active' : 'paused'} />
-                      </td>
-                      <td>
-                        {u.id !== user.id && (
-                          <button
-                            className="btn secondary compact"
-                            disabled={busy}
-                            onClick={() =>
-                              void action(() =>
-                                api(`/users/${u.id}`, 'PATCH', { active: u.active ? 0 : 1 }),
-                              )
-                            }
-                          >
-                            {u.active ? 'Desativar' : 'Ativar'}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </Table>
-              </section>
+                  <Table headers={['Nome', 'E-mail', 'Perfil', 'Acesso', 'Ações']}>
+                    {data.users?.map((u) => (
+                      <tr key={u.id}>
+                        <td>
+                          <strong>{u.name}</strong>
+                        </td>
+                        <td>{u.email}</td>
+                        <td>{roleNames[u.role]}</td>
+                        <td>
+                          <Badge value={u.active ? 'active' : 'paused'} />
+                        </td>
+                        <td>
+                          {u.id !== user.id && (
+                            <button
+                              className="btn secondary compact"
+                              disabled={busy}
+                              onClick={() =>
+                                void action(() =>
+                                  api(`/users/${u.id}`, 'PATCH', { active: u.active ? 0 : 1 }),
+                                )
+                              }
+                            >
+                              {u.active ? 'Desativar' : 'Ativar'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </Table>
+                </section>
+              )}
               <section className="panel export-panel">
                 <div>
                   <h2>Exportação dos dados</h2>

@@ -57,6 +57,7 @@ export type State = {
   csrf: string;
   today: string;
   demo: boolean;
+  requireLogin: boolean;
   settings: { name: string; phone: string; email: string };
   members: Member[];
   plans: Plan[];

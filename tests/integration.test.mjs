@@ -17,7 +17,7 @@ seed.close();
 let child, base;
 async function start() {
   child = spawn(process.execPath, ['server/index.mjs'], {
-    env: { ...process.env, SCAR_DB: dbPath, PORT: '0', HOST: '127.0.0.1' },
+    env: { ...process.env, SCAR_DB: dbPath, SCAR_REQUIRE_LOGIN: '1', PORT: '0', HOST: '127.0.0.1' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const text = await new Promise((resolve, reject) => {
